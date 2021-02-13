@@ -3,26 +3,33 @@ use MatriceError::*;
 #[derive(PartialEq, PartialOrd, Debug)]
 pub struct AugMatrice {
     rows : Vec<Row>,
-    width : usize, //Does not inclued augmented matrix
+    width : usize, //Does not include final column of the augmented matrix
     height : usize,
 }
 
 impl AugMatrice {
-    pub fn new(rows : Vec<Row>) -> Result<AugMatrice, MatriceError> {
+    pub fn new(rows : Vec<Row>) -> AugMatrice {
         let height = rows.len();
-        
-        let mut rows_iter = rows.iter();
-        let width = match rows_iter.next() {
-            Some(first_row) => first_row.elements.len(),
-            None => return Ok(AugMatrice{rows : rows, width : 0, height : 0 })
-        };
-
-        for i in rows_iter {
-            if i.elements.len() != width {return Err(RowsNotOfEqualLength);}
+        if height == 0
+        {
+            return AugMatrice{rows : rows, width : 0, height : 0 };
         }
+        
+        let width = rows[0].elements.len();
 
-        Ok(AugMatrice{rows : rows, width : width, height : height})
+        for i in rows.iter() {
+            debug_assert!(i.elements.len() == width); // Compiles away in release mode
+        }
+        /*
+            Instead of performing runtime checks for input argument validity we use a debug assert.
+            This way we give the callee of the function the responsibility of passing non-junk data
+            and we streamline the code by removing the error case. If during development the function
+            is missused we simply crash through the debug assert.
+        */
+
+        AugMatrice{rows : rows, width : width, height : height}
     }
+
 
     pub fn height(&self) -> usize { //Make sure this function is used everwhere it should!!!!
         self.height
@@ -31,62 +38,65 @@ impl AugMatrice {
     pub fn width(&self) -> usize { //Make sure this function is used everwhere it should!!!!
         self.width
     }
-    
-    pub fn get_element(&self, row : usize, element : usize) -> Result<f64, MatriceError> {
-        Ok(
-        *self.rows.get(row).ok_or(IndexOutOfBounds)?
-        .elements.get(element).ok_or(IndexOutOfBounds)?
-        )
+
+    pub fn get_element(&self, row : usize, element : usize) -> f64
+    {
+        debug_assert!(row < self.height(), element < self.width());
+
+        self.rows[row].elements[element]
     }
 
-    pub fn get_sum(&self, row : usize) -> Result<f64, MatriceError> {
-        Ok(self.get_row(row)?.sum)
+    pub fn get_sum(&self, row : usize) -> f64 {
+        debug_assert!(row < self.height);
+
+        self.rows[row].sum
     }
 
-    pub fn row_switch(&mut self, row1 : usize, row2 : usize) -> Result<(), MatriceError> {
-        if row1 >= self.height() || row2 >= self.height() {return Err(IndexOutOfBounds)}
+    pub fn row_switch(&mut self, row1 : usize, row2 : usize) {
+        debug_assert!(row1 < self.height, row2 < self.height);
 
         self.rows.swap(row1, row2);
-
-        Ok(())
     }
 
-    pub fn multiply_row(&mut self, row : usize, factor : f64) -> Result<(), MatriceError> {
-        let row = self.get_row_mut(row)?;
+    pub fn multiply_row(&mut self, row : usize, factor : f64) {
+        /*
+            let row = self.get_row_mut(row)?;
+            It's not our job to runtime check the callee. Instead we debug assert for our sanity.
+            The following assert makes it a lot more clear to the reader what they
+            did wrong to cause a crash.
+        */
+        debug_assert!(row < self.rows.len());
 
-        row.multiply_row(factor);
-        row.sum *= factor;
-
-        Ok(())
+        self.rows[row].multiply_row(factor);
+        // self.rows[row].sum *= factor; To justify the narly function call above I moved
+        // this into Row::multiply_row
     }
 
-    pub fn add_multiplied_row(&mut self, row1 : usize, row2 : usize, factor : f64) -> Result<(), MatriceError> {
-        let (row1, row2) = self.two_mut_row(row1, row2)?;
+    pub fn add_multiplied_row(&mut self, row1 : usize, row2 : usize, factor : f64)
+    {
+        debug_assert!(row1 < self.height(), row2 < self.height());
+        /*
+        let row1 = self.rows.get(row1).unwrap();   // We know these succeed if the assert passes
+        let row2 = self.rows.get_mut(row2).unwrap();
+        But rust won't let us use them because borrow checker. :(
+        Instead we can index into the array on each time, not doing any borrows,
+        thereby skipping the checking.
+        */
 
-        row2.add_rows(row1, factor);
+        for i in 0..self.width
+        {
+            self.rows[row2].elements[i] += self.rows[row1].elements[i] * factor;
+        }
+        self.rows[row2].sum += self.rows[row1].sum * factor;
 
-        Ok(())
+        //row2.add_rows(row1, factor); this doesn't work without that narly borrow code you borrowed.
     }
 
-    fn get_row_mut(&mut self, row : usize) -> Result<&mut Row, MatriceError> {
-        Ok(self.rows.get_mut(row).ok_or(MatriceError::IndexOutOfBounds)?)
-    }
-
-    fn get_row(&self, row : usize) -> Result<&Row, MatriceError> {
-        Ok(self.rows.get(row).ok_or(MatriceError::IndexOutOfBounds)?)
-    }
-
-    fn two_mut_row(&mut self, row1 : usize, row2 : usize) -> Result<(&mut Row, &mut Row), MatriceError> {
-        if row1 == row2 {return Err(CannotGetSameReference)}
-        if row1 >= self.height() || row2 >= self.height {return Err(IndexOutOfBounds)} 
-
-        Ok(two_mut_ref(&mut self.rows, row1, row2))
-    }
 }
 
 #[derive(PartialEq, PartialOrd, Debug)]
 pub struct Row {
-    elements : Vec<f64>,
+    pub elements : Vec<f64>,
     sum : f64
 }
 
@@ -99,8 +109,11 @@ impl Row {
         for i in self.elements.iter_mut() {
             *i *= factor;
         }
+        self.sum *= factor;
     }
-
+/*
+        You feel in the object oriented trap which required you to do the narly borrow.
+        By moving this function up to the callee level we avoid the borrow situation.
     fn add_rows(&mut self, factor_row : &Row, factor : f64) {
         self.sum += factor_row.sum * factor;
 
@@ -113,6 +126,7 @@ impl Row {
             *element += factor_element * factor;
         }
     }
+*/
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -207,22 +221,3 @@ mod test {
 
 }
 
-// <Not mine>
-fn two_mut_ref(slice: &mut [Row], idx1: usize, idx2: usize) -> (&mut Row, &mut Row) {
-    assert!(idx1 != idx2);
-
-    // Determine which index is higher    
-    if idx1 < idx2 {
-        // Use the higher index for the split,
-        // so that the lower index will be somewhere in the lower slice
-        // and the higher index will be first in the higher slice
-        let (lower, higher) = slice.split_at_mut(idx2);
-        
-        (&mut lower[idx1], &mut higher[0])
-    } else {
-        let (lower, higher) = slice.split_at_mut(idx1);
-        
-        (&mut higher[0], &mut lower[idx2])
-    }
-}
-// </Not mine>

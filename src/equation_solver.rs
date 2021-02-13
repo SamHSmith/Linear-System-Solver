@@ -23,8 +23,8 @@ impl AugMatrice {
 
     fn reorder_row(&mut self, iteration : usize) -> Result<(), MatriceError> { //Change error messages
         for row in iteration..self.height() {
-            if self.get_element(row, iteration).expect("Element out of range, should not be possible ErrID : 0") != 0f64 {
-                self.row_switch(iteration, row).expect("Row out of range, should not be possible ErrID : 1");
+            if self.get_element(row, iteration) != 0f64 {
+                self.row_switch(iteration, row);
                 
                 return Ok(());
             }
@@ -34,20 +34,23 @@ impl AugMatrice {
     }
 
     fn make_leading_one(&mut self, iteration : usize) {
-        let leading_non_zero = self.get_element(iteration, iteration).expect("Element out of range, should not be possible ErrID : 2");
-        self.multiply_row(iteration, 1f64 / leading_non_zero).expect("Row out of range, should not be possible ErrID : 3");
+        let leading_non_zero = self.get_element(iteration, iteration);
+        self.multiply_row(iteration, 1f64 / leading_non_zero);
     }
 
-    fn clean_column(&mut self, iteration : usize) {
-        for row in (0..iteration).chain(iteration + 1.. self.height()) { //makes an iterator with all but the column value in it
-            let factor = -self.get_element(row, iteration).expect("Element out of range, should not be possible ErrID : 4");
-            self.add_multiplied_row(iteration, row, factor).expect("Element out of range, should not be possible ErrID : 5");
+    fn clean_column(&mut self, iteration : usize)
+    {
+        //makes an iterator with all but the column value in it
+        for row in (0..iteration).chain(iteration + 1.. self.height())
+        {
+            let factor = -self.get_element(row, iteration);
+            self.add_multiplied_row(iteration, row, factor);
         }
     }
 
     fn is_solved(&mut self) -> bool {
         for row in self.width()..self.height() {
-            if self.get_sum(row).expect("Element out of range, should not be possible ErrID : 7") != 0f64 {
+            if self.get_sum(row) != 0f64 {
                 return false
             }
         }
@@ -58,7 +61,7 @@ impl AugMatrice {
     fn get_solution(self) -> Vec<f64> {
         let mut solution = Vec::with_capacity(self.width());
         for row in 0..self.width() {
-            solution.push(self.get_sum(row).expect("Row out of range, should not be possible ErrID : 6"));
+            solution.push(self.get_sum(row));
         }
 
         solution
